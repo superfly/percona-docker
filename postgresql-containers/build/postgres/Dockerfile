@@ -166,7 +166,7 @@ RUN set -ex; \
 
 RUN microdnf -y install --enablerepo="epel" percona-patroni; \
     microdnf clean all; \
-    rm -rf /var/cache/dnf /var/cache/yum \
+    rm -rf /var/cache/dnf /var/cache/yum
 
 ENV PATH="${PGROOT}/bin:${PATH}"
 
