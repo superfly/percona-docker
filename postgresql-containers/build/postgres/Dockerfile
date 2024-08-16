@@ -258,3 +258,4 @@ USER 26
 
 #CMD ["/usr/bin/patroni"] # postgres
 #CMD ["/opt/crunchy/bin/start.sh"] # pgbackrest
+CMD []
