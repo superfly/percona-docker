@@ -252,6 +252,8 @@ ENV NSS_WRAPPER_SUBDIR="postgres"
 #ENTRYPOINT ["/opt/crunchy/bin/postgres-ha/bootstrap-postgres-ha.sh"] # postgres
 #ENTRYPOINT ["/opt/crunchy/bin/uid_postgres.sh"] # pgbackrest
 
+RUN mkdir /fly-init && chown -R 26:0 /fly-init
+
 USER 26
 
 #CMD ["/usr/bin/patroni"] # postgres
