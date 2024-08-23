@@ -92,8 +92,9 @@ VOLUME ["/pgconf"]
 # Defines a unique directory name that will be utilized by the nss_wrapper in the UID script
 ENV NSS_WRAPPER_SUBDIR="pgbouncer"
 
-ENTRYPOINT ["opt/crunchy/bin/uid_daemon.sh"]
+#ENTRYPOINT ["opt/crunchy/bin/uid_daemon.sh"]
 
 USER 2
 
-CMD ["/opt/crunchy/bin/start.sh"]
+#CMD ["/opt/crunchy/bin/start.sh"]
+CMD []

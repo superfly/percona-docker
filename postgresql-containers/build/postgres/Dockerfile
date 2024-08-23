@@ -1,4 +1,4 @@
-FROM golang:1.22 AS go_builder
+FROM golang:1.22 AS yq_builder
 WORKDIR /go/src/github.com/mikefarah/yq
 
 ARG GOOS=linux
@@ -13,6 +13,23 @@ RUN git clone -b $YQ_VERSION https://github.com/mikefarah/yq.git .; \
     sed -i -e 's^dev: test ^dev: ^' ./Makefile; \
     CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
     make local build
+
+FROM golang:1.22 AS go_builder
+WORKDIR /go/src/github.com/percona/percona-docker/postgresql-containers/src
+
+COPY . .
+
+ARG GOOS=linux
+ARG GOARCH=amd64
+ARG CGO_ENABLED=0
+
+RUN mkdir -p build/_output/bin; \
+    CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
+    go build \
+        -o build/_output/bin/pgbackrest ./cmd/pgbackrest; \
+    cp -r build/_output/bin/pgbackrest /usr/local/bin/pgbackrest; \
+    ./bin/license_aggregator.sh; \
+    cp -r ./licenses /licenses
 
 FROM redhat/ubi8-minimal
 
@@ -72,16 +89,21 @@ RUN set -ex; \
         gettext \
         hostname \
         perl \
+        tar \
         libedit \
         openssh \
         openssh-server \
         openssh-clients \
-        procps-ng; \
+        procps-ng \
+        bzip2 \
+        lz4; \
     sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/epel*.repo; \
     sed -i 's/install_langs C.utf8/install_langs all/' /etc/rpm/macros.image-language-conf; \
     microdnf -y module disable llvm-toolset; \
     microdnf -y install \
+        systemd \
         libpq \
+        nss_wrapper \
         llvm \
         glibc-all-langpacks \
         percona-postgresql${PG_MAJOR//.}; \
@@ -157,6 +179,38 @@ RUN set -ex; \
 
 RUN rm -rf /var/spool/pgbackrest
 
+# pgbackrest
+# only PG16 is affected PG-794
+RUN if [[ "${PG_MAJOR//.}" -le '15' ]]; then \
+        groupadd postgres -g 26; \
+        useradd postgres -u 26 -g 26; \
+    else \
+        usermod -d /home/postgres postgres; \
+    fi
+RUN mkdir -p /var/log/pgbackrest
+COPY bin/pgbackrest-restore /opt/crunchy/bin
+COPY conf/pgbackrest-restore /opt/crunchy/conf
+COPY --from=go_builder /usr/local/bin/pgbackrest /opt/crunchy/bin/
+COPY --from=go_builder /licenses /licenses
+COPY bin/pgbackrest-common /opt/crunchy/bin
+RUN set -ex; \
+    chown -R postgres:postgres /opt/crunchy  \
+        /backrestrepo /var/log/pgbackrest /pgdata
+
+COPY bin/pgbackrest-repo /usr/local/bin
+
+RUN set -ex; \
+    chmod +x /usr/local/bin/pgbackrest-repo.sh /usr/local/bin/archive-push-s3.sh \
+      /usr/local/bin/archive-push-gcs.sh; \
+    mkdir -p /etc/pgbackrest; \
+    chown -R postgres:postgres /etc/pgbackrest; \
+    chmod -R g=u /etc/pgbackrest; \
+    rm -f /run/nologin \
+          /etc/pgbackrest.conf
+
+COPY conf/pgbackrest-repo/pgbackrest.conf /etc/pgbackrest.conf
+# end pgbackrest
+
 # open up the postgres port
 EXPOSE 5432
 
@@ -165,8 +219,8 @@ COPY bin/common /opt/crunchy/bin
 COPY conf/postgres_common /opt/crunchy/conf
 COPY licenses /licenses
 
-COPY --from=go_builder /go/src/github.com/mikefarah/yq/LICENSE /licenses/LICENSE.yq
-COPY --from=go_builder /go/src/github.com/mikefarah/yq/yq /opt/crunchy/bin/
+COPY --from=yq_builder /go/src/github.com/mikefarah/yq/LICENSE /licenses/LICENSE.yq
+COPY --from=yq_builder /go/src/github.com/mikefarah/yq/yq /opt/crunchy/bin/
 
 RUN set -ex; \
     mkdir /.ssh; \
@@ -195,8 +249,13 @@ VOLUME ["/sshd", "/pgconf", "/pgdata", "/pgwal", "/backrestrepo"]
 # Defines a unique directory name that will be utilized by the nss_wrapper in the UID script
 ENV NSS_WRAPPER_SUBDIR="postgres"
 
-ENTRYPOINT ["/opt/crunchy/bin/postgres-ha/bootstrap-postgres-ha.sh"]
+#ENTRYPOINT ["/opt/crunchy/bin/postgres-ha/bootstrap-postgres-ha.sh"] # postgres
+#ENTRYPOINT ["/opt/crunchy/bin/uid_postgres.sh"] # pgbackrest
+
+RUN mkdir /fly-init && chown -R 26:0 /fly-init
 
 USER 26
 
-CMD ["/usr/bin/patroni"]
+#CMD ["/usr/bin/patroni"] # postgres
+#CMD ["/opt/crunchy/bin/start.sh"] # pgbackrest
+CMD []
