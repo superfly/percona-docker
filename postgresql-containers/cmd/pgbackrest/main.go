@@ -332,7 +332,7 @@ local_hash="$(sha1sum "${files[@]}" | sha1sum)"
 if [[ "${local_hash}" != "${hash}" ]]; then
 	printf >&2 "hash %s does not match local hash %s" "${hash}" "${local_hash}"; exit 1;
 else
-	` + strings.Join(cmd, " ") + `
+	su postgres -c '` + strings.Join(cmd, " ") + `'
 fi
 `
 
@@ -351,7 +351,6 @@ fi
 // runCommand runs the provided pgBackRest command according to the configuration
 // provided
 func runCommand(kubeapi *KubeAPI, cfg config, cmd []string) (string, string, error) {
-	bashCmd := []string{"bash"}
-	reader := strings.NewReader(strings.Join(cmd, " "))
-	return kubeapi.Exec(cfg.namespace, cfg.podName, cfg.container, reader, bashCmd)
+	bashCmd := []string{"su", "postgres", "-c", strings.Join(cmd, " ")}
+	return kubeapi.Exec(cfg.namespace, cfg.podName, cfg.container, nil, bashCmd)
 }
